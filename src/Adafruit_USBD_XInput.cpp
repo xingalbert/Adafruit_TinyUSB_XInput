@@ -89,49 +89,32 @@ uint8_t desc_ms_os_20[MS_OS_20_DESC_LEN] = {
 
 // clang-format on
 
-#ifdef ARDUINO_ARCH_ESP32
-static uint16_t xinput_load_descriptor(uint8_t *dst, uint8_t *itf) {
-    // uint8_t str_index = tinyusb_add_string_descriptor("TinyUSB XInput");
-    uint8_t str_index = 0;
-
-    uint8_t ep_in = tinyusb_get_free_in_endpoint();
-    uint8_t ep_out = tinyusb_get_free_out_endpoint();
-    TU_VERIFY(ep_in && ep_out);
-    ep_in |= EPIN;
-
-    const uint8_t descriptor[TUD_XINPUT_DESC_LEN] = {
-        // Interface number, string index, EP Out & EP In address, EP size
-        TUD_XINPUT_DESCRIPTOR(*itf, str_index, ep_out, ep_in, EPSIZE, 1)
-    };
-
-    *itf += 1;
-    memcpy(dst, descriptor, TUD_XINPUT_DESC_LEN);
-    return TUD_XINPUT_DESC_LEN;
-}
-#endif
-
 //------------- IMPLEMENTATION -------------//
 
 Adafruit_USBD_XInput::Adafruit_USBD_XInput(uint8_t interval_ms) {
     _interval_ms = interval_ms;
-
-#ifdef ARDUINO_ARCH_ESP32
-    // ESP32 requires setup configuration descriptor within constructor
-    _xinput_dev = this;
-    const uint16_t desc_len = getInterfaceDescriptor(0, NULL, 0);
-    tinyusb_enable_interface(USB_INTERFACE_VENDOR, desc_len, xinput_load_descriptor);
-#endif
 }
 
 uint16_t Adafruit_USBD_XInput::getInterfaceDescriptor(
-    uint8_t itfnum,
+    uint8_t itfnum_deprecated,
     uint8_t *buf,
     uint16_t bufsize
 ) {
-    // usb core will automatically update endpoint number
-    const uint8_t desc[] = { TUD_XINPUT_DESCRIPTOR(itfnum, 0, EPOUT, EPIN, EPSIZE, _interval_ms) };
-    const uint16_t len = sizeof(desc);
+    (void)itfnum_deprecated;
 
+    if (!buf) {
+        return TUD_XINPUT_DESC_LEN;
+    }
+
+    uint8_t const itfnum = TinyUSBDevice.allocInterface(1);
+    uint8_t const ep_in = TinyUSBDevice.allocEndpoint(TUSB_DIR_IN);
+    uint8_t const ep_out = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
+
+
+    const uint8_t desc[] = { TUD_XINPUT_DESCRIPTOR(itfnum, 0, ep_out, ep_in, EPSIZE, _interval_ms) };
+    uint16_t const len = sizeof(desc);
+
+    // null buffer for length only
     if (bufsize < len) {
         return 0;
     }
@@ -139,7 +122,7 @@ uint16_t Adafruit_USBD_XInput::getInterfaceDescriptor(
     memcpy(buf, desc, len);
 
     // update the bFirstInterface in MS OS 2.0 descriptor
-    // that is bound to XUSB driver
+    // that is bound to WinUSB driver
     desc_ms_os_20[0x0a + 0x08 + 4] = itfnum;
 
     return len;
@@ -151,6 +134,10 @@ bool Adafruit_USBD_XInput::begin(void) {
     }
 
     TinyUSBDevice.setVersion(0x0210);
+    TinyUSBDevice.setManufacturerDescriptor("Rectangle Corner");
+    TinyUSBDevice.setProductDescriptor("Cross Cut (XInput)");
+    // TinyUSBDevice.setID(0x0738, 0x4726);
+    TinyUSBDevice.setID(0x045E, 0x028E);
 
     _xinput_dev = this;
     return true;
@@ -219,12 +206,6 @@ uint16_t xinput_open(
     const tusb_desc_interface_t *itf_descriptor,
     uint16_t max_length
 ) {
-    if (itf_descriptor->bInterfaceClass != TUSB_CLASS_VENDOR_SPECIFIC ||
-        itf_descriptor->bInterfaceSubClass != XINPUT_SUBCLASS_DEFAULT ||
-        itf_descriptor->bInterfaceProtocol != XINPUT_PROTOCOL_DEFAULT) {
-        return false;
-    }
-
     uint16_t driver_length = sizeof(tusb_desc_interface_t) +
                              (itf_descriptor->bNumEndpoints * sizeof(tusb_desc_endpoint_t)) + 16;
 
