@@ -152,6 +152,10 @@ bool Adafruit_USBD_XInput::begin(void) {
 
     TinyUSBDevice.setVersion(0x0210);
 
+    TinyUSBDevice.setManufacturerDescriptor("Rectangle Corner");
+    TinyUSBDevice.setProductDescriptor("Cross Cut (XInput)");
+    // TinyUSBDevice.setID(0x0738, 0x4726);
+    TinyUSBDevice.setID(0x045E, 0x028E);
     _xinput_dev = this;
     return true;
 }
